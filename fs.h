@@ -4,7 +4,10 @@
 #define DEFAULT_DISK_SIZE 10240 //this is 40 blocks
 #define DEFAULT_DISK_NAME “tinyFSDisk”
 
+
+
 int tfs_mkfs(char *filename, int nBytes);
+//makes the superblock and formatts it correctly
 int tfs_mount(char *diskname); 
 int tfs_unmount(void);
 

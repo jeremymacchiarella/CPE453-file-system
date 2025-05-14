@@ -8,3 +8,4 @@ int closeDisk(int disk);
 int readBlock(int disk, int bNum, void *block);
 int writeBlock(int disk, int bNum, void *block);
 void diskInit();
+FILE* getfp(char *diskName);

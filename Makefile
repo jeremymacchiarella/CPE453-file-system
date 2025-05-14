@@ -8,7 +8,7 @@ CFLAGS = -Wall -g
 TARGET = fs
 
 # Source files
-SRCS = main.c libdisk.c
+SRCS = main.c libdisk.c fs.c
 
 # Object files (generated from the source files)
 OBJS = $(SRCS:.c=.o)
