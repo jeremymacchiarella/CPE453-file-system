@@ -62,7 +62,7 @@ int writeBlock(int disk, int bNum, void *block){
         return -1;
     }
     if (diskSizes[disk] <= (bNum)){
-        printf("bNum %d is not allocated in disk %d\n", bNum, disk);
+        printf("writeblock: bNum %d is not allocated in disk %d\n", bNum, disk);
         return -1;
     }
     int byteNum = bNum * BLOCKSIZE;
@@ -79,25 +79,23 @@ int writeBlock(int disk, int bNum, void *block){
 }
 
 int readBlock(int disk, int bNum, void *block){
+    
     if (diskSizes[disk] == -1){
         printf("disk %d is not open\n", disk);
         return -1;
     }
     if (diskSizes[disk] <= (bNum)){
-        printf("bNum %d is not allocated in disk %d\n", bNum, disk);
+        printf("readblock: bNum %d is not allocated in disk %d\n", bNum, disk);
         return -1;
     }
 
     int byteNum = bNum * BLOCKSIZE;
-    // char filename[MAXFILENAME];
-    // strcpy(filename, diskNames[disk]);
-
-    // FILE* f = fopen(filename, "r+");
-    // FILE* f = fps[disk];
+    
     FILE* f = mounted;
     fseek(f, byteNum, SEEK_SET);
     fread(block, BLOCKSIZE, 1, f); //maybe check this return val?
-    fclose(f); 
+
+    //fclose(f); 
     return 0;
 
 
@@ -112,3 +110,15 @@ FILE* getfp(char *diskName){
     return NULL; //failed to find disk with such a name
 }
 
+int getDiskNum(char *diskName){
+    for (int i = 0; i < MAXDISKS; i++){
+        if (strcmp(diskName, diskNames[i]) == 0){
+            return i;
+        }
+    }
+    return -1; //failed to find a disknum with such a name
+}
+
+int getSize(int diskNum){
+    return diskSizes[diskNum];
+}
