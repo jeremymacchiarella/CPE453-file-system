@@ -23,8 +23,17 @@ int main(int argc, char **argv){
     printf("fd1: %d\n", fd1);
 
     char buffer[20] = "Hello World!";
+    char buffer2[10] = "ddddmmmm";
+
+    
 
     int res = tfs_writeFile(fd0, buffer, strlen(buffer));
+  
+
+    tfs_deleteFile(fd0);
+
+    int fd2 = tfs_openFile("file2");
+    
     printf("res in main: %d\n", res);
     return 0;
 }

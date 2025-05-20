@@ -261,7 +261,7 @@ int tfs_writeFile(int fd, char *buffer, int size){
     int res = readBlock(mounted_diskNum, 0, (void*) superblock);
     uint64_t positions = 0;
     memcpy(&positions, &superblock[4], 5); //get field that specifies which blocks are open
-    printf("positions: %lx\n", positions);
+    
 
     
     if (res < 0){
@@ -279,6 +279,19 @@ int tfs_writeFile(int fd, char *buffer, int size){
     memcpy(&prev_size, &inodeBlock[4], 2);
     if (prev_size != 0){
         //need to truncate file before writing to it
+        for (int i = 0; i < BLOCKSIZE; i++){
+            uint8_t blockNumToDelete;
+            memcpy(&blockNumToDelete, &inodeBlock[16+i], 1);
+            if (blockNumToDelete == 0){
+                break;
+            }
+            set_open(blockNumToDelete);
+            positions |=  (1ULL << blockNumToDelete);
+            uint8_t resetBlock[BLOCKSIZE];
+            memset(resetBlock, 0, BLOCKSIZE);
+            res = writeBlock(mounted_diskNum, blockNumToDelete, (void*) resetBlock);
+            memcpy(&inodeBlock[16+i], resetBlock, 1); //delete this file from inode indexing
+        }
     }
 
     //if prev size is 0 (no truncation needs to be done)
@@ -291,6 +304,8 @@ int tfs_writeFile(int fd, char *buffer, int size){
             return -1;
         }
         set_closed(fileBlockNum); //rewrite superblock to count this block as not available
+        positions &=  ~(1ULL << fileBlockNum); //for local copy of positions
+
         memcpy(&inodeBlock[16+i], (uint8_t*)&fileBlockNum, 1); //set this block num in the inode indexing
         //create the file
         uint8_t fileBlock[BLOCKSIZE];
@@ -337,5 +352,36 @@ int tfs_writeFile(int fd, char *buffer, int size){
 
     
 
+
+}
+
+int tfs_deleteFile(int fd){
+    int inodeBlockNum = files[fd].inode_block;
+    uint8_t inodeBlock[BLOCKSIZE];
+    int res = readBlock(mounted_diskNum, inodeBlockNum, (void*) inodeBlock);
+    if (res < 0){
+        printf("failed to read inode in delete file\n");
+        return -1;
+    }
+
+    uint8_t resetBlock[BLOCKSIZE];
+    memset(resetBlock, 0, BLOCKSIZE);
+    for (int i = 0; i < BLOCKSIZE - 16; i++){
+        uint8_t blockNumToDelete;
+        memcpy(&blockNumToDelete, &inodeBlock[16+i], 1);
+        if (blockNumToDelete == 0){
+            break;
+        }
+        set_open(blockNumToDelete);
+        //positions |=  (1ULL << blockNumToDelete);
+        
+        res = writeBlock(mounted_diskNum, blockNumToDelete, (void*) resetBlock);
+        
+    }
+
+    set_open(inodeBlockNum);
+    res = writeBlock(mounted_diskNum, inodeBlockNum, (void*) resetBlock);
+
+    return 0;
 
 }
