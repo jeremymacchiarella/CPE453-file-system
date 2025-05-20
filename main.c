@@ -21,5 +21,10 @@ int main(int argc, char **argv){
     int fd1 = tfs_openFile("file1");
     printf("fd0: %d\n", fd0);
     printf("fd1: %d\n", fd1);
+
+    char buffer[20] = "Hello World!";
+
+    int res = tfs_writeFile(fd0, buffer, strlen(buffer));
+    printf("res in main: %d\n", res);
     return 0;
 }

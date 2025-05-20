@@ -10,12 +10,20 @@
 #define BLOCKSPERDISK 40
 #define INODE 2
 
-//for inodes: 4th bytes is size, 5th byte starts the file name
+//todo: make dynamic table for open files, not static arr
+
+//for inodes: 4th and 5th bytes is size, 6th byte starts the file name
+
+//free index at 16
+
+//staring at index 16 is the block number of the files belonging to that inode
 
 typedef struct {
     int inode_block;
     int offset;
     char name[MAXFILENAME];
+    int isOpen;
+    int size;
 } file_t;
 
 file_t files[MAXFILES]; //indexed by file descriptor (fd made by this process, not a real fd)
@@ -44,11 +52,11 @@ int tfs_mkfs(char *filename, int nBytes){
     //probably do indexed
     uint8_t type = 1;
     uint8_t magicNum = 0x44;
-    uint32_t free_blocks = 0xFFFFFFFF; //all blocks are free at the start 
+    uint64_t free_blocks = 0xFFFFFFFFFE; //all blocks are free at the start except for superblock
     memcpy(superblock, &type, 1);
     memcpy(&superblock[1], &magicNum, 1);
-    memcpy(&superblock[4], &free_blocks, 4);
-    memcpy(&superblock[8], &free_blocks, 1);
+    memcpy(&superblock[4], &free_blocks, 5);
+    
 
     
 
@@ -143,17 +151,17 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
     memset(inode, 0, BLOCKSIZE);
     uint8_t type = 2;
     uint8_t magicNum = 0x44;
-    uint8_t size = 0;
+    uint16_t size = 0;
     
     memcpy(inode, &type, 1);
     memcpy(&inode[1], &magicNum, 1);
-    memcpy(&inode[4], &size, 1);
+    memcpy(&inode[4], &size, 2);
 
     if ((strlen(name) + 1) >= MAXFILENAME) {
         printf("filename too long\n");
         return -1;
     }
-    memcpy(&inode[5], name, strlen(name)); //strlen(name) should not be more than 8
+    memcpy(&inode[6], name, strlen(name)); //strlen(name) should not be more than 8
 
     //NEED TO GET NEXT AVAILABLE BLOCK
     uint8_t superblock[BLOCKSIZE];
@@ -167,14 +175,14 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
     uint64_t positions = 0;
 
     memcpy(&positions, &superblock[4], 5); //get the field which speciefies open blocks
-    printf("positions: %lx\n", positions);
+    
     int inodeBlock = find_opening(positions);
     if (inodeBlock < 0){
         printf("disk is full\n");
         return -1;
     }
     set_closed(inodeBlock);
-    res = writeBlock(mounted_diskNum, inodeBlock + 1, (void*)inode); //plus one because the first block is always the superblock
+    res = writeBlock(mounted_diskNum, inodeBlock, (void*)inode); //plus one because the first block is always the superblock
     if (res < 0){
         printf("write block error in open file\n");
         return -1;
@@ -183,6 +191,8 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
     file_t newFile;
     newFile.inode_block = inodeBlock;
     newFile.offset = 0;
+    newFile.isOpen = 1;
+    newFile.size = 0;
     strcpy(newFile.name, name); //name should be max 8 chars w/ out null
     fd_num++;
     files[fd_num] = newFile;
@@ -194,7 +204,7 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
 int find_opening(uint64_t value){
     for (int i = 0; i < 40; i++) {
         if (((value >> i) & 1) == 1) {
-            return i;
+            return i; //because first block is always superblock
         }
     }
     return -1; // there are no open blocks in the drive
@@ -230,4 +240,102 @@ int set_open(int bNum){
         return -1;
     }
     return 0;
+}
+
+int tfs_closeFile(int fd){
+    files[fd].isOpen = 0;
+    return 0;
+}
+
+int tfs_writeFile(int fd, char *buffer, int size){
+    if (!(files[fd].isOpen)){
+        printf("trying to write to a file that is not open\n");
+        return -1;
+    }
+    uint8_t magicnum = 0x44;
+    if (size > 255*40){
+        printf("size too large\n");
+    }
+
+    uint8_t superblock[BLOCKSIZE];
+    int res = readBlock(mounted_diskNum, 0, (void*) superblock);
+    uint64_t positions = 0;
+    memcpy(&positions, &superblock[4], 5); //get field that specifies which blocks are open
+    printf("positions: %lx\n", positions);
+
+    
+    if (res < 0){
+        printf("error reading superblock in write\n");
+        return -1;
+    }
+    int inodeBlockNum = files[fd].inode_block;
+    uint8_t inodeBlock[BLOCKSIZE];
+    res = readBlock(mounted_diskNum, inodeBlockNum, (void*) inodeBlock); //read the inode block, will need to modify it
+    if (res < 0){
+        printf("error reading inode in write\n");
+        return -1;
+    }
+    uint16_t prev_size = 0;
+    memcpy(&prev_size, &inodeBlock[4], 2);
+    if (prev_size != 0){
+        //need to truncate file before writing to it
+    }
+
+    //if prev size is 0 (no truncation needs to be done)
+    memcpy(&inodeBlock[4], (uint16_t*)&size, 2); //copy the size into the inode
+    int numBlocks = (size / (BLOCKSIZE - 4)) + 1; //only have blocksize - 4 bytes per block for DATA, 4 bytes are used for other
+    for (int i = 0; i < numBlocks; i++){
+        int fileBlockNum = find_opening(positions);
+        if (fileBlockNum < 0){
+            printf("disk is full in write\n");
+            return -1;
+        }
+        set_closed(fileBlockNum); //rewrite superblock to count this block as not available
+        memcpy(&inodeBlock[16+i], (uint8_t*)&fileBlockNum, 1); //set this block num in the inode indexing
+        //create the file
+        uint8_t fileBlock[BLOCKSIZE];
+        memset(fileBlock, 0, BLOCKSIZE);
+        uint8_t type = 3; //for file
+        memcpy(fileBlock, &type, 1);
+        memcpy(&fileBlock[1], &magicnum, 1);
+
+        uint8_t data[BLOCKSIZE - 4];
+        //memcpy(data, &buffer[(BLOCKSIZE - 4) * i], BLOCKSIZE - 4); //get the data
+        if (i == (numBlocks - 1)){
+            //this is the last block that needs to be written
+            int dataSize = size - (BLOCKSIZE - 4) * i;
+            memcpy(data, &buffer[(BLOCKSIZE - 4) * i], dataSize); //get the data
+            memcpy(&fileBlock[4], data, dataSize);
+            res = writeBlock(mounted_diskNum, fileBlockNum, (void*) fileBlock);
+            if (res < 0){
+                printf("write error in write\n");
+                return -1;
+            }
+        }
+        else{ //writing full 254 bytes
+            memcpy(data, &buffer[(BLOCKSIZE - 4) * i], BLOCKSIZE - 4); //get the data
+            memcpy(&fileBlock[4], data, (BLOCKSIZE - 4));
+            res = writeBlock(mounted_diskNum, fileBlockNum, (void*) fileBlock);
+            if (res < 0){
+                printf("write error in write\n");
+                return -1;
+            }
+
+        }
+        
+        
+
+
+    }
+    //need to rewrite the inode (inode buffer already has correct size)
+    files[fd].size = size;
+    files[fd].offset = 0;
+    res = writeBlock(mounted_diskNum, inodeBlockNum, (void*) inodeBlock);
+
+    return 0;
+    
+
+    
+
+
 }
