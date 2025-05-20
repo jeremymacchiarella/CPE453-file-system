@@ -19,21 +19,23 @@ int main(int argc, char **argv){
 
     int fd0 = tfs_openFile("file0");
     int fd1 = tfs_openFile("file1");
-    printf("fd0: %d\n", fd0);
-    printf("fd1: %d\n", fd1);
 
     char buffer[20] = "Hello World!";
     char buffer2[10] = "ddddmmmm";
 
-    
-
-    int res = tfs_writeFile(fd0, buffer, strlen(buffer));
+    tfs_writeFile(fd0, buffer, strlen(buffer));
   
+    char buff[1];
+    int res;
+    printf("read data: ");
+    while((res = tfs_readByte(fd0, buff)) > 0){
+        printf("%c", buff[0]);
+    }
+    printf("\n");
+   
 
-    tfs_deleteFile(fd0);
-
-    int fd2 = tfs_openFile("file2");
     
-    printf("res in main: %d\n", res);
+   
     return 0;
 }
+

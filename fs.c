@@ -130,7 +130,10 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
 
         if (block[0] == INODE){
             char curr_filename[MAXFILENAME];
-            strcpy(curr_filename, (char *)&block[5]);
+            memcpy(curr_filename, &block[6], MAXFILENAME - 1);
+            curr_filename[MAXFILENAME - 1] = '\0';
+            //printf("curr: %s\n", curr_filename);
+
             if (strcmp(curr_filename, name) == 0){
                 //there is already a file with this name
                 for (int j = 0; j < MAXFILES; j++){
@@ -144,7 +147,7 @@ int tfs_openFile(char *name){ //RETURNS FILE DESCRIPTOR
         }
         
     }
-    printf("did not find file w/ name %s\n", name);
+    //printf("did not find file w/ name %s\n", name);
     //there is no file with this name 
     //create an inode for this file 
     uint8_t inode[BLOCKSIZE];
@@ -384,4 +387,37 @@ int tfs_deleteFile(int fd){
 
     return 0;
 
+}
+
+int tfs_readByte(int fd, char *buffer){
+    
+    int max = files[fd].size;
+    if (files[fd].offset >= max){
+        //printf("reached eof\n");
+        return -1; //eof
+    }
+    int file_num = (files[fd].offset / (BLOCKSIZE - 4)); //which file in inode indexing
+    uint8_t inodeBlock[BLOCKSIZE];
+    int inodeBlockNum = files[fd].inode_block;
+    int res = readBlock(mounted_diskNum, inodeBlockNum, (void*) inodeBlock);
+    if (res < 0){
+        printf("inode read error in readByte\n");
+    }
+    int fileBlockNum = (inodeBlock[16+file_num]);
+   
+
+    uint8_t block[BLOCKSIZE];
+    res = readBlock(mounted_diskNum, fileBlockNum, (void*) block);
+    if (res < 0){
+        printf("block read error in readbyte\n");
+    }
+    
+
+    int blockOffset = 4 + (files[fd].offset % (BLOCKSIZE - 4)); //4 to pass the 4 bytes not used for data
+    
+
+    
+    memcpy(buffer, &(block[blockOffset]), 1); 
+    files[fd].offset++;
+    return 1;
 }
